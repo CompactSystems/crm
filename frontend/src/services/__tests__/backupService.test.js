@@ -7,7 +7,7 @@ const download = vi.hoisted(() => ({ downloadBlob: vi.fn() }));
 vi.mock("../api", () => ({ default: api }));
 vi.mock("../../utils/downloadFile", () => download);
 
-import { BackupIntegrityError, downloadBackup, startBackup } from "../backupService";
+import { BackupIntegrityError, downloadBackup, kindOf, startBackup, startReadableExport } from "../backupService";
 
 const BYTES = new TextEncoder().encode("PGDMP archive");
 
@@ -51,5 +51,26 @@ describe("backupService", () => {
         await expect(downloadBackup({ id: 4, sizeBytes: BYTES.length, sha256: "0".repeat(64) }))
             .rejects.toThrow(/checksum/);
         expect(download.downloadBlob).not.toHaveBeenCalled();
+    });
+
+    it("starts a readable export with a POST to its own admin endpoint", async () => {
+        api.post.mockResolvedValue({ data: { id: 2, kind: "READABLE_EXPORT", status: "RUNNING" } });
+
+        expect(await startReadableExport()).toEqual({ id: 2, kind: "READABLE_EXPORT", status: "RUNNING" });
+        expect(api.post).toHaveBeenCalledWith("/admin/backups/readable");
+    });
+
+    it("treats rows without a kind as full backups", () => {
+        expect(kindOf({ id: 1 })).toBe("DUMP");
+        expect(kindOf({ id: 1, kind: "DUMP" })).toBe("DUMP");
+        expect(kindOf({ id: 1, kind: "READABLE_EXPORT" })).toBe("READABLE_EXPORT");
+    });
+
+    it("saves a readable export as a .zip after the same size and checksum check", async () => {
+        api.get.mockResolvedValue({ data: new Blob([BYTES]) });
+
+        await downloadBackup({ id: 5, kind: "READABLE_EXPORT", sizeBytes: BYTES.length, sha256: await sha256(BYTES) });
+
+        expect(download.downloadBlob).toHaveBeenCalledWith(expect.any(Blob), "crm-readable-export-5.zip");
     });
 });

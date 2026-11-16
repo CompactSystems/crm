@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 const service = vi.hoisted(() => {
     class BackupIntegrityError extends Error {}
@@ -9,7 +9,11 @@ const service = vi.hoisted(() => {
         listBackups: vi.fn(),
         getBackup: vi.fn(),
         startBackup: vi.fn(),
+        startReadableExport: vi.fn(),
         downloadBackup: vi.fn(),
+        KIND_DUMP: "DUMP",
+        KIND_READABLE: "READABLE_EXPORT",
+        kindOf: (b) => (b?.kind === "READABLE_EXPORT" ? "READABLE_EXPORT" : "DUMP"),
     };
 });
 
@@ -28,6 +32,14 @@ const FAILED = {
     available: false, errorMessage: "pg_dump failed (exit 1): server version mismatch",
 };
 const REMOVED = { ...DONE, id: 2, available: false, fileName: "crm-backup-old-2.dump" };
+
+const EXPORT_DONE = {
+    id: 20, kind: "READABLE_EXPORT", status: "SUCCEEDED", startedAt: "2026-11-15T09:00:00",
+    finishedAt: "2026-11-15T09:00:12", durationMs: 12000, sizeBytes: 300 * 1024, sha256: "cd".repeat(32),
+    totalRows: 12345, initiatedByName: "Admin One", available: true, expiresAt: "2026-12-15T09:00:12",
+    fileName: "crm-readable-export-20261115T090000Z-20.zip",
+};
+const EXPORT_EXPIRED = { ...EXPORT_DONE, id: 19, available: false, expiresAt: null };
 
 beforeEach(() => {
     vi.clearAllMocks();
@@ -160,5 +172,95 @@ describe("Database backups (admin)", () => {
         expect(formatBytes(512)).toBe("512 B");
         expect(formatBytes(1536)).toBe("1.5 KB");
         expect(formatBytes(5 * 1024 * 1024)).toBe("5.0 MB");
+    });
+
+    // ---- readable exports ------------------------------------------------
+
+    it("shows full backups and readable exports as two clearly separate tools", async () => {
+        service.listBackups.mockResolvedValue([EXPORT_DONE, DONE, EXPORT_EXPIRED, FAILED]);
+
+        render(<Backups />);
+
+        expect(await screen.findByRole("heading", { name: /Full backup/ })).toBeTruthy();
+        expect(screen.getByText("For restoring")).toBeTruthy();
+        expect(screen.getByRole("heading", { name: /Readable export/ })).toBeTruthy();
+        expect(screen.getByText("Not a backup - cannot restore")).toBeTruthy();
+
+        // each history only lists its own kind
+        const exportsSection = screen.getByRole("heading", { name: /Readable export/ }).closest("section");
+        const dumpsSection = screen.getByRole("heading", { name: /Full backup/ }).closest("section");
+        expect(within(exportsSection).getAllByText("12,345")).toHaveLength(2);
+        expect(within(exportsSection).getByText("Expired or removed")).toBeTruthy();
+        expect(within(exportsSection).queryByText(/pg_dump failed/)).toBeNull();
+        expect(within(dumpsSection).getByText(/pg_dump failed/)).toBeTruthy();
+        expect(within(dumpsSection).queryByText("12,345")).toBeNull();
+
+        expect(screen.getAllByRole("button", { name: "Download" })).toHaveLength(1);
+        expect(screen.getAllByRole("button", { name: "Download readable export" })).toHaveLength(1);
+    });
+
+    it("creates a readable export, disables both buttons while it runs, and reports success", async () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true });
+        service.listBackups.mockResolvedValue([DONE]);
+        service.startReadableExport.mockResolvedValue({ id: 21, kind: "READABLE_EXPORT", status: "RUNNING" });
+        service.getBackup
+            .mockResolvedValueOnce({ id: 21, kind: "READABLE_EXPORT", status: "RUNNING" })
+            .mockResolvedValueOnce({ ...EXPORT_DONE, id: 21, sizeBytes: 2048, durationMs: 9000, totalRows: 1500 });
+
+        render(<Backups />);
+        fireEvent.click(await screen.findByRole("button", { name: /Create Readable Export/ }));
+
+        await screen.findByText(/Readable export started/);
+        expect(service.startReadableExport).toHaveBeenCalledTimes(1);
+        expect(service.startBackup).not.toHaveBeenCalled();
+        expect(screen.getByRole("button", { name: /Creating export/ }).disabled).toBe(true);
+        expect(screen.getByRole("button", { name: /Take Backup/ }).disabled).toBe(true);
+        expect(screen.getByText(/only one can run at a time/)).toBeTruthy();
+
+        await act(async () => { await vi.advanceTimersByTimeAsync(3100); });
+        await act(async () => { await vi.advanceTimersByTimeAsync(3100); });
+
+        expect(await screen.findByText("Readable export completed (2.0 KB, 1,500 rows, 9 s).")).toBeTruthy();
+        expect(screen.getByRole("button", { name: /Create Readable Export/ }).disabled).toBe(false);
+        expect(screen.getByRole("button", { name: /Take Backup/ }).disabled).toBe(false);
+    });
+
+    it("reports a failed readable export with its reason, never as a backup", async () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true });
+        service.listBackups.mockResolvedValue([]);
+        service.startReadableExport.mockResolvedValue({ id: 22, kind: "READABLE_EXPORT", status: "RUNNING" });
+        service.getBackup.mockResolvedValue({
+            id: 22, kind: "READABLE_EXPORT", status: "FAILED",
+            errorMessage: "The readable export is larger than the 50 MB limit for one file in backup storage",
+        });
+
+        render(<Backups />);
+        fireEvent.click(await screen.findByRole("button", { name: /Create Readable Export/ }));
+        await act(async () => { await vi.advanceTimersByTimeAsync(3100); });
+
+        expect(await screen.findByText(
+            "Readable export failed: The readable export is larger than the 50 MB limit for one file in backup storage")).toBeTruthy();
+        expect(screen.queryByText(/^Backup failed/)).toBeNull();
+    });
+
+    it("resumes watching a readable export that is already running when the page opens", async () => {
+        service.listBackups.mockResolvedValue([{ id: 23, kind: "READABLE_EXPORT", status: "RUNNING", startedAt: "2026-11-15T09:00:00", initiatedByName: "A" }]);
+        service.getBackup.mockResolvedValue({ id: 23, kind: "READABLE_EXPORT", status: "RUNNING" });
+
+        render(<Backups />);
+
+        await waitFor(() => expect(screen.getByRole("button", { name: /Creating export/ }).disabled).toBe(true));
+        expect(screen.getByRole("button", { name: /Take Backup/ }).disabled).toBe(true);
+        expect(screen.getByText(/An export is running/)).toBeTruthy();
+    });
+
+    it("downloads a readable export through the same checked download", async () => {
+        service.listBackups.mockResolvedValue([EXPORT_DONE]);
+        service.downloadBackup.mockResolvedValue(undefined);
+
+        render(<Backups />);
+        fireEvent.click(await screen.findByRole("button", { name: "Download readable export" }));
+
+        await waitFor(() => expect(service.downloadBackup).toHaveBeenCalledWith(EXPORT_DONE));
     });
 });
