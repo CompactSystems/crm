@@ -44,6 +44,10 @@ const ACTION_OPTIONS = [
     { value: "BACKUP_SUCCEEDED", label: "Backup Succeeded" },
     { value: "BACKUP_FAILED", label: "Backup Failed" },
     { value: "BACKUP_DOWNLOADED", label: "Backup Downloaded" },
+    { value: "READABLE_EXPORT_STARTED", label: "Readable Export Started" },
+    { value: "READABLE_EXPORT_SUCCEEDED", label: "Readable Export Succeeded" },
+    { value: "READABLE_EXPORT_FAILED", label: "Readable Export Failed" },
+    { value: "READABLE_EXPORT_DOWNLOADED", label: "Readable Export Downloaded" },
 ];
 
 const MODULE_LABELS = Object.fromEntries(MODULE_OPTIONS.map((m) => [m.value, m.label]));

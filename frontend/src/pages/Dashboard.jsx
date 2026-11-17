@@ -28,6 +28,11 @@ export default function Dashboard() {
     const [recentLeads, setRecentLeads] = useState([]);
     const [upcomingFollowUps, setUpcomingFollowUps] = useState([]);
 
+    // Pending follow-ups dated before today: the five oldest and the exact
+    // count (both absent from an older backend - treated as none).
+    const [overdueFollowUps, setOverdueFollowUps] = useState([]);
+    const [overdueFollowUpCount, setOverdueFollowUpCount] = useState(0);
+
     // The five main stages (NEW is retired - its opportunities count as
     // IN_PROGRESS).
     const [pipeline, setPipeline] = useState({
@@ -86,6 +91,8 @@ const employeeName =
 
             setRecentLeads(data.recentLeads || []);
             setUpcomingFollowUps(data.upcomingFollowUps || []);
+            setOverdueFollowUps(data.overdueFollowUps || []);
+            setOverdueFollowUpCount(data.overdueFollowUpCount || 0);
             setPipeline(data.pipeline || {});
             setOtherStages(data.otherStages || {});
             setInProgressBreakdown(data.inProgressBreakdown || {});
@@ -477,6 +484,113 @@ const employeeName =
             </div>
 
         </div>
+
+        {/* Overdue Follow Ups - pending follow-ups dated before today (any
+            opportunity stage), oldest first. A separate list, so they never
+            take a place in Upcoming Follow Ups above. */}
+
+        <div className="card shadow-sm border-0 mt-4" data-testid="overdue-followups">
+
+            <div className="card-header bg-white d-flex justify-content-between align-items-center">
+
+                <h5 className="fw-bold mb-0">
+
+                    Overdue Follow Ups
+
+                    {overdueFollowUpCount > 0 && (
+                        <span className="badge bg-danger ms-2" data-testid="overdue-followups-count">
+                            {overdueFollowUpCount}
+                        </span>
+                    )}
+
+                </h5>
+
+                <button
+                    className="btn btn-sm btn-outline-primary"
+                    onClick={() => navigate("/followups")}
+                >
+
+                    View All
+
+                </button>
+
+            </div>
+
+            <div className="card-body">
+
+                {
+
+                    overdueFollowUps.length === 0 ?
+
+                        <EmptyState
+                            icon="bi-check2-circle"
+                            title="No Overdue Follow Ups"
+                            message="No pending follow-up is past its date."
+                        />
+
+                        :
+
+                        <>
+
+                            {overdueFollowUps.map((item) => (
+
+                                <div
+                                    key={item.id}
+                                    className="border border-danger-subtle rounded p-3 mb-3 shadow-sm"
+                                    style={{
+                                        cursor: "pointer",
+                                        transition: "0.2s"
+                                    }}
+                                    onClick={() => openFollowUp(item)}
+                                    data-testid="overdue-followup"
+                                >
+
+                                    <div className="fw-bold">
+
+                                        {item.companyName || "Unknown"}
+
+                                    </div>
+
+                                    <div className="text-muted small">
+
+                                        {item.activityTypeName || "Follow Up"}
+
+                                    </div>
+
+                                    <div className="mt-2">
+
+                                        <span className="badge bg-danger-subtle text-danger-emphasis">
+
+                                            <i className="bi bi-exclamation-circle me-1"></i>
+
+                                            Was due {formatDateTime(item.scheduledDate)}
+
+                                        </span>
+
+                                    </div>
+
+                                </div>
+
+                            ))}
+
+                            {overdueFollowUpCount > overdueFollowUps.length && (
+
+                                <div className="text-muted small" data-testid="overdue-followups-more">
+
+                                    and {overdueFollowUpCount - overdueFollowUps.length} more - see View All
+
+                                </div>
+
+                            )}
+
+                        </>
+
+                }
+
+            </div>
+
+        </div>
+
                 {/* Opportunity Pipeline */}
 
         <div className="card shadow-sm border-0 mt-4">
