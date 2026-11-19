@@ -9,10 +9,9 @@ export default function DropdownAddManage({
     options,
     required = false,
     isAdmin = false,
-    // Whether this user may open the "+ Add" / manage dialog at all.
-    // Defaults to true so every existing dropdown behaves exactly as
-    // before; Sales Stage passes false for non-Admins (the backend also
-    // rejects non-Admin stage changes).
+    // Whether this dropdown offers the "+ Add" / manage dialog at all. The
+    // dialog is additionally ADMIN-only (isAdmin) for every master list: the
+    // backend rejects non-Admin create/update/delete with 403.
     canAdd = true,
     // Whether the dialog offers "Add New". Defaults to true (every existing
     // dropdown unchanged). Sales Stage passes false: the five main stages
@@ -224,7 +223,7 @@ export default function DropdownAddManage({
 
                 </select>
 
-                {canAdd && (
+                {isAdmin && canAdd && (
                     <button
                         type="button"
                         className="btn btn-outline-primary text-nowrap"

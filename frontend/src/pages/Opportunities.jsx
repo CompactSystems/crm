@@ -28,7 +28,8 @@ import { describeLineItems } from "../utils/lineItems";
 import {
     getAllOpportunities,
     bulkDeleteOpportunities,
-    exportOpportunities
+    exportOpportunities,
+    backupOpportunities
 } from "../services/opportunityService";
 import { getAllSalesStages } from "../services/salesStageService";
 import { getAllProducts } from "../services/productService";
@@ -287,6 +288,7 @@ export default function Opportunities({
     const [showBulkWhatsApp, setShowBulkWhatsApp] = useState(false);
     const [resumeBulkWhatsApp, setResumeBulkWhatsApp] = useState(false);
     const [exporting, setExporting] = useState(false);
+    const [backingUp, setBackingUp] = useState(false);
 
     async function handleBulkDelete() {
 
@@ -361,6 +363,32 @@ export default function Opportunities({
         } finally {
 
             setExporting(false);
+
+        }
+
+    }
+
+    // "Backup Opportunities": ignores the search, filters, page, selection
+    // and visible columns - always every opportunity the user may export,
+    // with every field.
+    async function handleBackup() {
+
+        setBackingUp(true);
+
+        try {
+
+            const blob = await backupOpportunities();
+
+            downloadBlob(blob, "Backup Opportunities.xlsx");
+
+        } catch (error) {
+
+            console.error(error);
+            alert(await exportErrorMessage(error, "opportunities"));
+
+        } finally {
+
+            setBackingUp(false);
 
         }
 
@@ -466,7 +494,7 @@ export default function Opportunities({
                                     className="btn btn-outline-secondary dropdown-toggle"
                                     type="button"
                                     data-bs-toggle="dropdown"
-                                    disabled={exporting}
+                                    disabled={exporting || backingUp}
                                 >
                                     <i className="bi bi-download me-2"></i>
                                     Export
@@ -485,6 +513,12 @@ export default function Opportunities({
                                             onClick={() => handleExport(true)}
                                         >
                                             Export selected ({list.selectedCount})
+                                        </button>
+                                    </li>
+                                    <li><hr className="dropdown-divider" /></li>
+                                    <li>
+                                        <button className="dropdown-item" onClick={handleBackup} disabled={backingUp}>
+                                            {backingUp ? "Preparing backup..." : "Backup Opportunities (all, every field)"}
                                         </button>
                                     </li>
                                     <li><hr className="dropdown-divider" /></li>

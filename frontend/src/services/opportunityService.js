@@ -98,6 +98,16 @@ export const exportOpportunities = async ({ sort = null, filters = {}, selection
 
 };
 
+// "Backup Opportunities": every opportunity the caller may see, all fields,
+// one workbook. Takes no filters / selection / columns on purpose.
+export const backupOpportunities = async () => {
+
+    const response = await requestExport("/opportunities/backup", {}, null);
+
+    return withRowCount(response);
+
+};
+
 
 // Non-blocking Dashboard reminders: expired closing dates, active
 // opportunities with no upcoming follow-up, postponed review dates due.

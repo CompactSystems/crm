@@ -14,8 +14,7 @@ export default function MasterPage({
 }) {
     // Backend is the source of truth (every master-data delete endpoint is
     // ADMIN-only - see ProductController/IndustryController/etc.) - this
-    // only controls whether the delete button is offered at all. Add/edit
-    // stay available to any authenticated user, unchanged.
+    // only controls whether the add/edit/delete buttons are offered at all.
     const isAdmin = localStorage.getItem("role") === "ADMIN";
 
     const [items, setItems] = useState([]);
@@ -124,6 +123,7 @@ export default function MasterPage({
 
                 </div>
 
+                {isAdmin && (
                 <button
                     className="btn btn-primary"
                     onClick={() => {
@@ -135,6 +135,7 @@ export default function MasterPage({
 
                     Add {title}
                 </button>
+                )}
 
             </div>
 
@@ -256,6 +257,7 @@ export default function MasterPage({
 
                                         <div className="btn-group">
 
+                                            {isAdmin && (
                                             <button
                                                 className="btn btn-sm btn-warning"
                                                 onClick={() => {
@@ -269,6 +271,7 @@ export default function MasterPage({
                                             >
                                                 <i className="bi bi-pencil"></i>
                                             </button>
+                                            )}
 
                                             {isAdmin && (
                                                 <button
