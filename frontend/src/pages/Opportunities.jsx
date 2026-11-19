@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { Dropdown } from "react-bootstrap";
 
 import PageHeader from "../components/PageHeader";
 import DataTable from "../components/DataTable";
@@ -487,51 +488,44 @@ export default function Opportunities({
                             onReset={columns.resetColumns}
                         />
 
-                        {(
-                            <div className="dropdown">
+                        {/* react-bootstrap Dropdown, not data-bs-toggle="dropdown": the app
+                            loads only Bootstrap's CSS, never its JavaScript, so the data
+                            attribute alone opens nothing. */}
+                        <Dropdown>
 
-                                <button
-                                    className="btn btn-outline-secondary dropdown-toggle"
-                                    type="button"
-                                    data-bs-toggle="dropdown"
-                                    disabled={exporting || backingUp}
+                            <Dropdown.Toggle
+                                as="button"
+                                type="button"
+                                className="btn btn-outline-secondary"
+                                disabled={exporting || backingUp}
+                            >
+                                <i className="bi bi-download me-2"></i>
+                                Export
+                            </Dropdown.Toggle>
+
+                            <Dropdown.Menu align="end">
+                                <Dropdown.Item as="button" onClick={() => handleExport(false)}>
+                                    Export all matching ({list.totalElements})
+                                </Dropdown.Item>
+                                <Dropdown.Item
+                                    as="button"
+                                    disabled={list.selectedCount === 0}
+                                    onClick={() => handleExport(true)}
                                 >
-                                    <i className="bi bi-download me-2"></i>
-                                    Export
-                                </button>
+                                    Export selected ({list.selectedCount})
+                                </Dropdown.Item>
+                                <Dropdown.Divider />
+                                <Dropdown.Item as="button" onClick={handleBackup} disabled={backingUp}>
+                                    {backingUp ? "Preparing backup..." : "Backup Opportunities (all, every field)"}
+                                </Dropdown.Item>
+                                <Dropdown.Divider />
+                                <Dropdown.ItemText className="small text-muted">
+                                    Includes the {columns.visibleColumns.length} visible column(s) -
+                                    change them with Columns.
+                                </Dropdown.ItemText>
+                            </Dropdown.Menu>
 
-                                <ul className="dropdown-menu dropdown-menu-end">
-                                    <li>
-                                        <button className="dropdown-item" onClick={() => handleExport(false)}>
-                                            Export all matching ({list.totalElements})
-                                        </button>
-                                    </li>
-                                    <li>
-                                        <button
-                                            className="dropdown-item"
-                                            disabled={list.selectedCount === 0}
-                                            onClick={() => handleExport(true)}
-                                        >
-                                            Export selected ({list.selectedCount})
-                                        </button>
-                                    </li>
-                                    <li><hr className="dropdown-divider" /></li>
-                                    <li>
-                                        <button className="dropdown-item" onClick={handleBackup} disabled={backingUp}>
-                                            {backingUp ? "Preparing backup..." : "Backup Opportunities (all, every field)"}
-                                        </button>
-                                    </li>
-                                    <li><hr className="dropdown-divider" /></li>
-                                    <li>
-                                        <span className="dropdown-item-text small text-muted">
-                                            Includes the {columns.visibleColumns.length} visible column(s) -
-                                            change them with Columns.
-                                        </span>
-                                    </li>
-                                </ul>
-
-                            </div>
-                        )}
+                        </Dropdown>
 
                     </div>
 
