@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import useListReturn from "../hooks/useListReturn";
 
@@ -31,6 +31,10 @@ export default function EditFollowUp() {
     const { returnTo } = useListReturn("/followups");
 
     const [employees, setEmployees] = useState([]);
+
+    // One save at a time (see AddFollowUp).
+    const submittingRef = useRef(false);
+    const [submitting, setSubmitting] = useState(false);
     // The related record: starts as the one this follow-up is stored with
     // (from its own response - present even when that lead is converted or
     // not in any list), changes only if the user picks another.
@@ -146,6 +150,13 @@ export default function EditFollowUp() {
 
         e.preventDefault();
 
+        if (submittingRef.current) {
+            return;
+        }
+
+        submittingRef.current = true;
+        setSubmitting(true);
+
         // The next follow-up is sent only when it is being asked for.
         const { nextActionDescription, nextActionActivityTypeId, nextFollowUpDate, ...fields } = form;
 
@@ -170,6 +181,10 @@ export default function EditFollowUp() {
             console.error(err);
             alert(err.response?.data?.message || "Unable to update Follow Up.");
 
+            // The save failed: let the user correct the form and try again.
+            submittingRef.current = false;
+            setSubmitting(false);
+
         }
 
     }
@@ -190,6 +205,7 @@ export default function EditFollowUp() {
             setForm={setForm}
             onSubmit={handleSubmit}
             submitText="Update Follow Up"
+            submitting={submitting}
             completionPrompt={completionPrompt}
             target={target}
             onTargetChange={setTarget}

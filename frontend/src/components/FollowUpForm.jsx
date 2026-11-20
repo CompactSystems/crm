@@ -33,6 +33,9 @@ export default function FollowUpForm({
     // the completion); { required: false, existingDate } shows the upcoming
     // one that already exists, so nothing new is asked for. Null otherwise.
     completionPrompt = null,
+    // True while the save request is in flight: the submit button is disabled so
+    // a double click cannot send the same follow-up twice.
+    submitting = false,
 }) {
 
     const [activityTypes, setActivityTypes] = useState([]);
@@ -371,8 +374,9 @@ export default function FollowUpForm({
                             <button
                                 className="btn btn-primary"
                                 type="submit"
+                                disabled={submitting}
                             >
-                                {submitText}
+                                {submitting ? "Saving..." : submitText}
                             </button>
 
                         </div>

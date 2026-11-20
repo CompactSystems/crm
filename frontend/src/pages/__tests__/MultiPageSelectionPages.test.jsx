@@ -16,6 +16,7 @@ const followupService = vi.hoisted(() => ({
     getAllFollowUps: vi.fn(),
     bulkDeleteFollowUps: vi.fn(),
     exportFollowUps: vi.fn(),
+    getFollowUpSummary: vi.fn().mockResolvedValue({ total: 0, pending: 0, completed: 0, missed: 0, cancelled: 0, dueToday: 0 }),
 }));
 
 vi.mock("../../services/leadService", () => leadService);

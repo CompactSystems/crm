@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 import PageHeader from "../components/PageHeader";
 import DataTable from "../components/DataTable";
@@ -10,16 +10,25 @@ import BulkActionBar from "../components/list/BulkActionBar";
 import RecordLink from "../components/list/RecordLink";
 import ListPagination from "../components/list/ListPagination";
 
-import useServerList from "../hooks/useServerList";
+import useServerList, { serializeFilters } from "../hooks/useServerList";
 import usePersistedColumns from "../hooks/usePersistedColumns";
-import { formatDateTime, toIsoDate } from "../utils/formatDate";
+import { formatDateTime } from "../utils/formatDate";
 import { companyText, linkNote, relatedOf } from "../utils/followUpRelated";
 import { downloadBlob, exportCountNotice, exportErrorMessage } from "../utils/downloadFile";
+import {
+    FOLLOWUP_VIEWS,
+    FOLLOWUP_VIEW_KEYS,
+    filtersForView,
+    resolveFollowUpView,
+    statusOptionsForView,
+    summaryFilters,
+} from "../utils/followUpViews";
 
 import {
     getAllFollowUps,
     bulkDeleteFollowUps,
-    exportFollowUps
+    exportFollowUps,
+    getFollowUpSummary
 } from "../services/followupService";
 import { getAllActivityTypes } from "../services/activityTypeService";
 import { getAllEmployees } from "../services/employeeService";
@@ -98,10 +107,100 @@ export default function FollowUps() {
     // same "UX/defense-in-depth guard" rationale as AdminRoute.
     const isAdmin = localStorage.getItem("role") === "ADMIN";
 
+    // The view (Open / History / All) is an explicit URL parameter - see
+    // utils/followUpViews. Open, the default, is the absence of the parameter.
+    const [searchParams, setSearchParams] = useSearchParams();
+    const rawFilters = searchParams.get("filters");
+
+    const urlFilters = useMemo(() => {
+
+        try {
+            const parsed = JSON.parse(rawFilters || "{}");
+            return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+        } catch {
+            return {};
+        }
+
+    }, [rawFilters]);
+
+    const view = resolveFollowUpView(searchParams.get("view"), urlFilters);
+
+    // A pre-views link that only carried a status filter (e.g. status=COMPLETED)
+    // is shown as All. Make that explicit in the URL once, so clearing the filter
+    // afterwards keeps the view the user is looking at instead of flipping to Open.
+    const viewParam = searchParams.get("view");
+
+    useEffect(() => {
+
+        if (!viewParam && view !== "open") {
+
+            setSearchParams((prev) => {
+                const params = new URLSearchParams(prev);
+                params.set("view", view);
+                return params;
+            }, { replace: true });
+        }
+
+    }, [viewParam, view, setSearchParams]);
+
+    // A new fetchFn per view also resets the row selection (useServerList), so a
+    // ticked row from one view can never be exported or deleted from another.
+    const fetchFollowUps = useCallback(
+        (args) => getAllFollowUps({ ...args, filters: filtersForView(view, args.filters) }),
+        [view]
+    );
+
+    const initialSort = useMemo(() => FOLLOWUP_VIEWS[view].sort, [view]);
+
     const list = useServerList({
-        fetchFn: getAllFollowUps,
-        initialSort: { field: "scheduledDate", dir: "asc" }
+        fetchFn: fetchFollowUps,
+        initialSort
     });
+
+    // Switching view keeps the search and the other filters, drops the Status
+    // filter (each view decides its own statuses), returns to page 1 and to the
+    // view's default sort.
+    function changeView(next) {
+
+        setSearchParams((prev) => {
+
+            const params = new URLSearchParams(prev);
+
+            if (next === "open") params.delete("view");
+            else params.set("view", next);
+
+            const serialized = serializeFilters(summaryFilters(urlFilters));
+            if (serialized) params.set("filters", serialized);
+            else params.delete("filters");
+
+            params.delete("page");
+            params.delete("sort");
+
+            return params;
+
+        }, { replace: true });
+
+    }
+
+    // Exact totals for the tabs and cards: same search and filters as the list,
+    // without the status (the counts are per status). Refetched when the search
+    // or a filter changes, or after a delete - not on every page click.
+    const searchTerm = searchParams.get("q") || "";
+    const scopeKey = JSON.stringify(summaryFilters(urlFilters));
+    const [summary, setSummary] = useState(null);
+    const [summaryTick, setSummaryTick] = useState(0);
+
+    useEffect(() => {
+
+        let cancelled = false;
+
+        getFollowUpSummary({ search: searchTerm, filters: JSON.parse(scopeKey) })
+            .then((result) => { if (!cancelled) setSummary(result); })
+            .catch(() => { if (!cancelled) setSummary(null); });
+
+        return () => { cancelled = true; };
+
+    }, [searchTerm, scopeKey, summaryTick]);
 
     const columns = usePersistedColumns(
         "crm.columns.followups", ALL_FOLLOWUP_COLUMNS, DEFAULT_VISIBLE_FOLLOWUP_COLUMNS
@@ -125,8 +224,14 @@ export default function FollowUps() {
                 key: "activityTypeId", label: "Activity Type", type: "multiselect",
                 options: activityTypes.map((a) => ({ value: a.id, label: a.name }))
             },
-            { key: "status", label: "Status", type: "multiselect", options: FOLLOWUP_STATUS_OPTIONS },
         ];
+
+        // Open is a single status, so there is nothing to choose there.
+        const statusOptions = statusOptionsForView(view, FOLLOWUP_STATUS_OPTIONS);
+
+        if (statusOptions.length > 1) {
+            defs.splice(1, 0, { key: "status", label: "Status", type: "multiselect", options: statusOptions });
+        }
 
         if (employees.length > 0) {
             defs.push({
@@ -142,7 +247,7 @@ export default function FollowUps() {
 
         return defs;
 
-    }, [activityTypes, employees]);
+    }, [activityTypes, employees, view]);
 
     const [bulkDeleting, setBulkDeleting] = useState(false);
     const [exporting, setExporting] = useState(false);
@@ -168,6 +273,7 @@ export default function FollowUps() {
 
             // Deleted records leave the selection; skipped ones stay ticked.
             list.removeFromSelection(result.succeededIds || []);
+            setSummaryTick((t) => t + 1);
             await list.reload();
 
         } catch (error) {
@@ -191,7 +297,7 @@ export default function FollowUps() {
 
             const blob = await exportFollowUps({
                 sort: list.sort,
-                filters: { search: list.search || undefined, ...list.filters },
+                filters: { search: list.search || undefined, ...filtersForView(view, list.filters) },
                 selection: selectedOnly ? list.selection : null,
             });
 
@@ -217,12 +323,16 @@ export default function FollowUps() {
 
     }
 
+    // All of these come from the server (list total, summary counts), never from
+    // the rows on the current page.
     const totalFollowUps = list.totalElements;
-    const pendingFollowUps = list.data.filter((f) => f.status === "PENDING").length;
-    const completedFollowUps = list.data.filter((f) => f.status === "COMPLETED").length;
+    const shown = (n) => (summary ? n : "-");
 
-    const today = toIsoDate(new Date());
-    const todayFollowUps = list.data.filter((f) => f.scheduledDate?.startsWith(today)).length;
+    const tabCounts = {
+        open: summary?.pending,
+        history: summary ? summary.completed + summary.missed + summary.cancelled : undefined,
+        all: summary?.total,
+    };
 
     return (
 
@@ -241,7 +351,7 @@ export default function FollowUps() {
                 <div className="col-md-3">
                     <div className="card shadow-sm border-0">
                         <div className="card-body">
-                            <small className="text-muted">Total Follow Ups</small>
+                            <small className="text-muted">{FOLLOWUP_VIEWS[view].label} Follow Ups</small>
                             <h3>{totalFollowUps}</h3>
                         </div>
                     </div>
@@ -250,8 +360,8 @@ export default function FollowUps() {
                 <div className="col-md-3">
                     <div className="card shadow-sm border-0">
                         <div className="card-body">
-                            <small className="text-muted">Pending (this page)</small>
-                            <h3 className="text-warning">{pendingFollowUps}</h3>
+                            <small className="text-muted">Pending</small>
+                            <h3 className="text-warning">{shown(summary?.pending)}</h3>
                         </div>
                     </div>
                 </div>
@@ -259,8 +369,8 @@ export default function FollowUps() {
                 <div className="col-md-3">
                     <div className="card shadow-sm border-0">
                         <div className="card-body">
-                            <small className="text-muted">Completed (this page)</small>
-                            <h3 className="text-success">{completedFollowUps}</h3>
+                            <small className="text-muted">Completed</small>
+                            <h3 className="text-success">{shown(summary?.completed)}</h3>
                         </div>
                     </div>
                 </div>
@@ -268,13 +378,35 @@ export default function FollowUps() {
                 <div className="col-md-3">
                     <div className="card shadow-sm border-0">
                         <div className="card-body">
-                            <small className="text-muted">Today's (this page)</small>
-                            <h3>{todayFollowUps}</h3>
+                            <small className="text-muted">Pending due today</small>
+                            <h3>{shown(summary?.dueToday)}</h3>
                         </div>
                     </div>
                 </div>
 
             </div>
+
+            <ul className="nav nav-tabs mb-3" role="tablist" aria-label="Follow-up view">
+
+                {FOLLOWUP_VIEW_KEYS.map((key) => (
+                    <li className="nav-item" role="presentation" key={key}>
+                        <button
+                            type="button"
+                            role="tab"
+                            className={`nav-link${view === key ? " active" : ""}`}
+                            aria-selected={view === key}
+                            title={FOLLOWUP_VIEWS[key].hint}
+                            onClick={() => changeView(key)}
+                        >
+                            {FOLLOWUP_VIEWS[key].label}
+                            {tabCounts[key] !== undefined && (
+                                <span className="badge text-bg-light border ms-2">{tabCounts[key]}</span>
+                            )}
+                        </button>
+                    </li>
+                ))}
+
+            </ul>
 
             <div className="card shadow-sm border-0 mb-3">
 
@@ -399,7 +531,9 @@ export default function FollowUps() {
             {!list.loading && list.data.length === 0 && (
                 <div className="alert alert-light border text-center mt-3">
                     <i className="bi bi-search me-2"></i>
-                    No matching follow ups found.
+                    {view === "open"
+                        ? "No pending follow ups. Completed, missed and cancelled ones are under History."
+                        : "No matching follow ups found."}
                 </div>
             )}
 

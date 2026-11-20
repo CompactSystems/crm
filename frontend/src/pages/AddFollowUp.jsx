@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import FollowUpForm from "../components/FollowUpForm";
@@ -39,6 +39,11 @@ export default function AddFollowUp() {
     const loggedInEmployeeId = localStorage.getItem("employeeId");
 
     const [employees, setEmployees] = useState([]);
+
+    // One save at a time: the ref blocks a second click in the same tick (before
+    // the re-render that disables the button), the state disables the button.
+    const submittingRef = useRef(false);
+    const [submitting, setSubmitting] = useState(false);
     const [target, setTarget] = useState(null);
     const [lockedTarget, setLockedTarget] = useState(null);
 
@@ -99,6 +104,13 @@ export default function AddFollowUp() {
 
         e.preventDefault();
 
+        if (submittingRef.current) {
+            return;
+        }
+
+        submittingRef.current = true;
+        setSubmitting(true);
+
         try {
 
             await createFollowUp({
@@ -122,6 +134,10 @@ export default function AddFollowUp() {
             console.error(err);
             alert(err?.response?.data?.message || "Unable to create Follow Up.");
 
+            // The save failed: let the user correct the form and try again.
+            submittingRef.current = false;
+            setSubmitting(false);
+
         }
 
     }
@@ -134,6 +150,7 @@ export default function AddFollowUp() {
             setForm={setForm}
             onSubmit={handleSubmit}
             submitText="Create Follow Up"
+            submitting={submitting}
             target={target}
             onTargetChange={setTarget}
             lockedTarget={lockedTarget}

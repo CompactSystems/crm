@@ -5,6 +5,14 @@ export const getAllFollowUps = async (listArgs) => {
     return response.data;
 };
 
+// Exact counts per status (total, pending, completed, missed, cancelled, dueToday)
+// for the same search and filters as the list, ignoring the status filter - so
+// the tabs and summary cards show totals, not just the loaded page.
+export const getFollowUpSummary = async ({ search = "", filters = {} } = {}) => {
+    const response = await api.get("/followups/summary", { params: { search: search || undefined, ...filters } });
+    return response.data;
+};
+
 export const getFollowUpById = async (id) => {
     const response = await api.get(`/followups/${id}`);
     return response.data;
